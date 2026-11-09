@@ -1,7 +1,7 @@
 [project]
-name = "yt-summarize"
+name = "gistyt"
 version = "0.1.0"
-description = "Fetch YouTube transcripts and summarize them with Gemini"
+description = "gistYT — Fetch YouTube transcripts and summarize them with Gemini"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -14,8 +14,9 @@ dependencies = [
 ]
 
 [project.scripts]
-yt-transcript = "yt_summarize.transcript:main"
-yt-summarize = "yt_summarize.summarize:main"
+gistyt = "gistyt.summarize:main"
+yt-transcript = "gistyt.transcript:main"
+yt-summarize = "gistyt.summarize:main"
 
 [build-system]
 requires = ["uv_build>=0.12.3,<0.13.0"]

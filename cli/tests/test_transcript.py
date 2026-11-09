@@ -6,8 +6,8 @@ import pytest
 import youtube_transcript_api as yta
 from yt_dlp.utils import DownloadError
 
-from yt_summarize import transcript as T
-from yt_summarize.transcript import (
+from gistyt import transcript as T
+from gistyt.transcript import (
     NoCaptionsError,
     Track,
     TranscriptError,
@@ -349,4 +349,4 @@ def test_main_no_captions_exits_nonzero_and_writes_nothing(tmp_path, monkeypatch
 
 def test_transcript_module_does_not_import_summarizer():
     source = Path(T.__file__).read_text(encoding="utf-8")
-    assert "summarize import" not in source and "import yt_summarize.summarize" not in source
+    assert "summarize import" not in source and "import gistyt.summarize" not in source and "import yt_summarize.summarize" not in source

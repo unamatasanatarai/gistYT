@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from yt_summarize.naming import make_slug, summary_path, transcript_path
+from gistyt.naming import make_slug, summary_path, transcript_path
 
 ID = "dQw4w9WgXcQ"
 

@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
-from yt_summarize.naming import summary_path
+from gistyt.naming import summary_path
 
 DEFAULT_OUT_DIR = "summaries"
 DEFAULT_MODELS = [

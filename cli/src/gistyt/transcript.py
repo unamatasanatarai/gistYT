@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from yt_summarize.captions import json3_to_text, snippets_to_text
-from yt_summarize.naming import make_slug, transcript_path
-from yt_summarize.video_id import parse_video_id, watch_url
+from gistyt.captions import json3_to_text, snippets_to_text
+from gistyt.naming import make_slug, transcript_path
+from gistyt.video_id import parse_video_id, watch_url
 
 DEFAULT_OUT_DIR = "transcriptions"
 UNKNOWN_TITLE = "(unknown)"

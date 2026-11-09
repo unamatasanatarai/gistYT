@@ -1,6 +1,6 @@
 import pytest
 
-from yt_summarize.video_id import parse_video_id, watch_url
+from gistyt.video_id import parse_video_id, watch_url
 
 ID = "dQw4w9WgXcQ"
 

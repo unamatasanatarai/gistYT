@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from yt_summarize.captions import cues_to_paragraphs, json3_to_text, snippets_to_text
+from gistyt.captions import cues_to_paragraphs, json3_to_text, snippets_to_text
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample.en.json3"
 
