@@ -81,10 +81,14 @@ public enum MarkdownRenderer {
     }
 
     public static func renderHTML(markdown: String) -> String {
-        let escapedMarkdown = markdown
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
+        let jsonString: String
+        if let data = try? JSONSerialization.data(withJSONObject: [markdown]),
+           var str = String(data: data, encoding: .utf8) {
+            str = str.replacingOccurrences(of: "</", with: "<\\/")
+            jsonString = "\(str)[0]"
+        } else {
+            jsonString = "''"
+        }
 
         return """
         <!DOCTYPE html>
@@ -245,8 +249,17 @@ public enum MarkdownRenderer {
         <body>
             <div id="content"></div>
             <script>
-                const rawMarkdown = `\(escapedMarkdown)`;
+                const rawMarkdown = \(jsonString);
                 
+                function escapeHTML(str) {
+                    return str
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                }
+
                 function parseMarkdown(md) {
                     let html = '';
                     const lines = md.split('\\n');
@@ -257,18 +270,18 @@ public enum MarkdownRenderer {
                         let line = lines[i];
                         
                         if (line.startsWith('# ')) {
-                            html += '<h1>' + line.substring(2) + '</h1>';
+                            html += '<h1>' + escapeHTML(line.substring(2)) + '</h1>';
                             continue;
                         }
                         
-                        if (line.startsWith('&gt; **TL;DR**')) {
-                            const text = line.replace('&gt; **TL;DR**', '').trim();
+                        if (line.startsWith('> **TL;DR**')) {
+                            const text = escapeHTML(line.replace('> **TL;DR**', '').trim());
                             html += '<div class="tldr-card"><span class="tldr-badge">TL;DR</span>' + text + '</div>';
                             continue;
                         }
                         
-                        if (line.startsWith('&gt; ')) {
-                            const quote = line.substring(5).trim();
+                        if (line.startsWith('> ')) {
+                            const quote = escapeHTML(line.substring(2).trim());
                             html += '<blockquote>' + quote + '</blockquote>';
                             continue;
                         }
@@ -276,7 +289,7 @@ public enum MarkdownRenderer {
                         if (line.startsWith('## Topics')) {
                             html += '<h2>Topics</h2>';
                             if (i + 2 < lines.length && lines[i+2].includes('·')) {
-                                const tags = lines[i+2].split('·').map(t => t.trim()).filter(Boolean);
+                                const tags = lines[i+2].split('·').map(t => escapeHTML(t.trim())).filter(Boolean);
                                 html += '<div class="topics-container">';
                                 tags.forEach(t => {
                                     html += '<span class="topic-pill">' + t + '</span>';
@@ -289,13 +302,13 @@ public enum MarkdownRenderer {
 
                         if (line.startsWith('## ')) {
                             if (inList) { html += '</ul>'; inList = false; }
-                            html += '<h2>' + line.substring(3) + '</h2>';
+                            html += '<h2>' + escapeHTML(line.substring(3)) + '</h2>';
                             continue;
                         }
                         
                         if (line.startsWith('- ')) {
                             if (!inList) { html += '<ul>'; inList = true; }
-                            html += '<li>' + line.substring(2) + '</li>';
+                            html += '<li>' + escapeHTML(line.substring(2)) + '</li>';
                             continue;
                         } else if (inList && line.trim() === '') {
                             html += '</ul>';
@@ -307,17 +320,19 @@ public enum MarkdownRenderer {
                             isFirstMeta = false;
                             const parts = line.split(' · ');
                             const formatted = parts.map(p => {
-                                if (p.startsWith('https://')) {
-                                    return '<a href="' + p + '" target="_blank">' + p + '</a>';
+                                const trimmed = p.trim();
+                                if (trimmed.startsWith('https://')) {
+                                    const safeHref = encodeURI(trimmed);
+                                    return '<a href="' + safeHref + '" target="_blank">' + escapeHTML(trimmed) + '</a>';
                                 }
-                                return p;
+                                return escapeHTML(trimmed);
                             }).join(' · ');
                             html += '<div class="meta">' + formatted + '</div>';
                             continue;
                         }
                         
                         if (line.trim().length > 0) {
-                            html += '<p>' + line + '</p>';
+                            html += '<p>' + escapeHTML(line) + '</p>';
                         }
                     }
                     if (inList) { html += '</ul>'; }

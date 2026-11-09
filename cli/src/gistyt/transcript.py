@@ -383,8 +383,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _normalize_args(argv: Sequence[str]) -> list[str]:
+    args_list = list(argv)
+    if "--" in args_list:
+        return args_list
+    for i, arg in enumerate(args_list):
+        if arg.startswith("-") and parse_video_id(arg) is not None:
+            if i > 0 and args_list[i - 1] in ("--lang", "--out-dir"):
+                continue
+            args_list.pop(i)
+            args_list.extend(["--", arg])
+            break
+    return args_list
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    args_list = _normalize_args(argv if argv is not None else sys.argv[1:])
+    args = build_parser().parse_args(args_list)
 
     video_id = parse_video_id(args.video)
     if video_id is None:

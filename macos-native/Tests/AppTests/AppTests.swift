@@ -169,5 +169,33 @@ public enum AppTests {
 
             try? FileManager.default.removeItem(at: tempDir)
         }
+
+        // Hardening & Security regression tests
+        testRunner("MarkdownRenderer.renderHTML safely encodes backticks, expressions, and closing scripts") {
+            let malicious = "# Title `with backticks` and ${alert(1)}\n</script><script>alert('xss')</script>"
+            let html = MarkdownRenderer.renderHTML(markdown: malicious)
+            assert(!html.contains("`\(malicious)`"), "Must not use raw template literal interpolation")
+            assert(!html.contains("</script><script>"), "Closing script tags must be escaped as <\\/")
+            assert(html.contains("with backticks"), "Content must be preserved")
+        }
+
+        testRunner("YouTubeService.stripTagsAndUnescape decodes apostrophe and numeric entities") {
+            let input = "<p>don&apos;t you &#x27;know&#x27; &quot;it&#39;s&quot; &#8212; test</p>"
+            let cleaned = YouTubeService.stripTagsAndUnescape(input)
+            assert(cleaned == "don't you 'know' \"it's\" — test", "Expected properly decoded entities, got: \(cleaned)")
+        }
+
+        testRunner("VideoIDParser parses bare ID starting with hyphen") {
+            let hyphenID = "-dQw4w9WgXc"
+            assert(VideoIDParser.parseVideoID(from: hyphenID) == hyphenID)
+        }
+
+        testRunner("KeychainHelper stores, loads, and deletes credentials") {
+            let testKey = "gistyt_sec_test_token_\(UUID().uuidString)"
+            assert(KeychainHelper.saveKey(testKey), "Saving key to keychain should succeed")
+            assert(KeychainHelper.loadKey() == testKey, "Loaded key should match saved key")
+            assert(KeychainHelper.deleteKey(), "Deleting key should succeed")
+            assert(KeychainHelper.loadKey() == nil, "Key should be nil after deletion")
+        }
     }
 }

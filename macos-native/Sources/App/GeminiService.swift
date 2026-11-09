@@ -92,7 +92,7 @@ public actor GeminiService {
         transcriptText: String,
         apiKey: String
     ) async throws -> VideoSummary {
-        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)"
+        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent"
         guard let url = URL(string: urlString) else {
             throw GeminiError.badRequest("Invalid Gemini URL for model \(model)")
         }
@@ -100,6 +100,7 @@ public actor GeminiService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
         request.timeoutInterval = 180
 
         let payload: [String: Any] = [

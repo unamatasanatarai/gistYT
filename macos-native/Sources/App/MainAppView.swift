@@ -589,6 +589,8 @@ public struct MainAppView: View {
     // MARK: - Logic & Summarizing Pipeline
 
     private func startSummarizing() {
+        guard !isProcessing else { return }
+
         let raw = inputURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let videoID = VideoIDParser.parseVideoID(from: raw) else {
             errorMessage = "Please enter a valid YouTube video URL or ID."

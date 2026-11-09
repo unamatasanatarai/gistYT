@@ -347,6 +347,21 @@ def test_main_no_captions_exits_nonzero_and_writes_nothing(tmp_path, monkeypatch
     assert not out_dir.exists()
 
 
+def test_main_video_id_with_leading_hyphen(tmp_path, monkeypatch):
+    hyphen_id = "-dQw4w9WgXc"
+    sample_info = info(
+        id=hyphen_id,
+        subtitles={"en": [{"ext": "json3", "url": "https://example.com/en.json3"}]},
+    )
+    fake = FakeYDL(
+        sample_info,
+        payload=b'{"events": [{"tStartMs": 0, "dDurationMs": 1000, "segs": [{"utf8": "hello"}]}]}',
+    )
+    monkeypatch.setitem(T.fetch_transcript.__kwdefaults__, "ydl_factory", fake)
+    out_dir = tmp_path / "transcriptions"
+    assert T.main([hyphen_id, "--out-dir", str(out_dir)]) == 0
+
+
 def test_transcript_module_does_not_import_summarizer():
     source = Path(T.__file__).read_text(encoding="utf-8")
     assert "summarize import" not in source and "import gistyt.summarize" not in source

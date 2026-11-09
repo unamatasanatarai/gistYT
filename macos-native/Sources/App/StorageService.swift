@@ -110,13 +110,17 @@ public actor StorageService {
             var title = slug
             var channel: String? = nil
 
-            if let content = try? String(contentsOf: url, encoding: .utf8) {
-                let lines = content.components(separatedBy: .newlines)
-                if let first = lines.first(where: { $0.hasPrefix("# ") }) {
-                    title = String(first.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-                if let meta = lines.first(where: { $0.contains(" · ") && $0.contains("https://") }) {
-                    channel = meta.components(separatedBy: " · ").first?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let handle = try? FileHandle(forReadingFrom: url) {
+                let headerData = handle.readData(ofLength: 2048)
+                try? handle.close()
+                if let content = String(data: headerData, encoding: .utf8) {
+                    let lines = content.components(separatedBy: .newlines)
+                    if let first = lines.first(where: { $0.hasPrefix("# ") }) {
+                        title = String(first.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                    if let meta = lines.first(where: { $0.contains(" · ") && $0.contains("https://") }) {
+                        channel = meta.components(separatedBy: " · ").first?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
                 }
             }
 

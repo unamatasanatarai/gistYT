@@ -46,10 +46,19 @@ resources_dir="${contents_dir}/Resources"
 mkdir -p "$macos_dir" "$resources_dir"
 
 if [[ ! -f "Resources/yt-dlp" ]]; then
-    printf '%s\n' "Bundling standalone yt-dlp binary..."
+    printf '%s\n' "Locating yt-dlp binary..."
     mkdir -p Resources
-    curl -sL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o "Resources/yt-dlp"
-    chmod +x "Resources/yt-dlp"
+    for sys_path in "/opt/homebrew/bin/yt-dlp" "/usr/local/bin/yt-dlp" "$(command -v yt-dlp 2>/dev/null || true)"; do
+        if [[ -n "$sys_path" && -x "$sys_path" ]]; then
+            cp -f "$sys_path" "Resources/yt-dlp"
+            break
+        fi
+    done
+    if [[ ! -f "Resources/yt-dlp" ]]; then
+        printf '%s\n' "Downloading standalone yt-dlp binary from GitHub..."
+        curl -sL --fail --connect-timeout 15 "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o "Resources/yt-dlp"
+        chmod +x "Resources/yt-dlp"
+    fi
 fi
 
 if [[ -d "Resources" ]]; then

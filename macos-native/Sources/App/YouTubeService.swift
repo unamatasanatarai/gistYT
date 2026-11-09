@@ -465,7 +465,7 @@ public actor YouTubeService {
                 let startMs = Int(xml[tRange]) ?? 0
                 let durMs = Int(xml[dRange]) ?? 0
                 let rawText = String(xml[textRange])
-                let cleanText = stripTagsAndUnescape(rawText)
+                let cleanText = Self.stripTagsAndUnescape(rawText)
                 if !cleanText.isEmpty {
                     cues.append(CaptionCue(startMs: startMs, endMs: startMs + durMs, text: cleanText))
                 }
@@ -485,7 +485,7 @@ public actor YouTubeService {
             let startMs = Int(startSec * 1000)
             let durMs = Int(durSec * 1000)
             let rawText = String(xml[textRange])
-            let cleanText = stripTagsAndUnescape(rawText)
+            let cleanText = Self.stripTagsAndUnescape(rawText)
             if !cleanText.isEmpty {
                 cues.append(CaptionCue(startMs: startMs, endMs: startMs + durMs, text: cleanText))
             }
@@ -494,14 +494,40 @@ public actor YouTubeService {
         return cues
     }
 
-    private func stripTagsAndUnescape(_ string: String) -> String {
+    public static func stripTagsAndUnescape(_ string: String) -> String {
         var cleaned = string.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
         cleaned = cleaned.replacingOccurrences(of: "\n", with: " ")
+        cleaned = cleaned.replacingOccurrences(of: "&apos;", with: "'")
         cleaned = cleaned.replacingOccurrences(of: "&#39;", with: "'")
         cleaned = cleaned.replacingOccurrences(of: "&quot;", with: "\"")
+        cleaned = cleaned.replacingOccurrences(of: "&#34;", with: "\"")
         cleaned = cleaned.replacingOccurrences(of: "&amp;", with: "&")
+        cleaned = cleaned.replacingOccurrences(of: "&#38;", with: "&")
         cleaned = cleaned.replacingOccurrences(of: "&lt;", with: "<")
+        cleaned = cleaned.replacingOccurrences(of: "&#60;", with: "<")
         cleaned = cleaned.replacingOccurrences(of: "&gt;", with: ">")
+        cleaned = cleaned.replacingOccurrences(of: "&#62;", with: ">")
+
+        if cleaned.contains("&#") {
+            let regex = try? NSRegularExpression(pattern: #"&#(?:x([0-9a-fA-F]+)|([0-9]+));"#)
+            let nsStr = cleaned as NSString
+            let matches = regex?.matches(in: cleaned, range: NSRange(location: 0, length: nsStr.length)) ?? []
+            for match in matches.reversed() {
+                var codePoint: UInt32? = nil
+                if match.range(at: 1).location != NSNotFound {
+                    let hexStr = nsStr.substring(with: match.range(at: 1))
+                    codePoint = UInt32(hexStr, radix: 16)
+                } else if match.range(at: 2).location != NSNotFound {
+                    let decStr = nsStr.substring(with: match.range(at: 2))
+                    codePoint = UInt32(decStr, radix: 10)
+                }
+                if let cp = codePoint, let scalar = UnicodeScalar(cp) {
+                    let replacement = String(Character(scalar))
+                    cleaned = (cleaned as NSString).replacingCharacters(in: match.range, with: replacement)
+                }
+            }
+        }
+
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

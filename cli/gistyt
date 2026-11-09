@@ -16,7 +16,7 @@ out="$(mktemp)"
 trap 'rm -f "$out"' EXIT
 
 # Show gistyt-transcript's output as it runs, and keep a copy to find the saved path.
-uv run gistyt-transcript "$url" | tee "$out"
+uv run gistyt-transcript -- "$url" | tee "$out"
 
 transcript="$(sed -n -E 's/^(Saved|Overwrote) //p' "$out" | tail -n 1)"
 if [[ -z "$transcript" ]]; then
