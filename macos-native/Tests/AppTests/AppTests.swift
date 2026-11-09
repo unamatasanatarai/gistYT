@@ -189,13 +189,5 @@ public enum AppTests {
             let hyphenID = "-dQw4w9WgXc"
             assert(VideoIDParser.parseVideoID(from: hyphenID) == hyphenID)
         }
-
-        testRunner("KeychainHelper stores, loads, and deletes credentials") {
-            let testKey = "gistyt_sec_test_token_\(UUID().uuidString)"
-            assert(KeychainHelper.saveKey(testKey), "Saving key to keychain should succeed")
-            assert(KeychainHelper.loadKey() == testKey, "Loaded key should match saved key")
-            assert(KeychainHelper.deleteKey(), "Deleting key should succeed")
-            assert(KeychainHelper.loadKey() == nil, "Key should be nil after deletion")
-        }
     }
 }

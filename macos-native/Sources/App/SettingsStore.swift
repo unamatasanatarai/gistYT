@@ -1,67 +1,5 @@
 import Foundation
 import Combine
-import Security
-
-public enum KeychainHelper {
-    public static let service = "com.gistyt.app"
-    public static let account = "GeminiAPIKey"
-
-    @discardableResult
-    public static func saveKey(_ key: String) -> Bool {
-        guard let data = key.data(using: .utf8) else { return false }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-
-        if key.isEmpty {
-            SecItemDelete(query as CFDictionary)
-            return true
-        }
-
-        let attributes: [String: Any] = [
-            kSecValueData as String: data
-        ]
-
-        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound {
-            var newQuery = query
-            newQuery[kSecValueData as String] = data
-            let addStatus = SecItemAdd(newQuery as CFDictionary, nil)
-            return addStatus == errSecSuccess
-        }
-        return status == errSecSuccess
-    }
-
-    public static func loadKey() -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        if status == errSecSuccess, let data = item as? Data, let key = String(data: data, encoding: .utf8) {
-            return key
-        }
-        return nil
-    }
-
-    @discardableResult
-    public static func deleteKey() -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        return status == errSecSuccess || status == errSecItemNotFound
-    }
-}
 
 public final class SettingsStore: ObservableObject {
     public static let shared = SettingsStore()
@@ -80,10 +18,7 @@ public final class SettingsStore: ObservableObject {
 
     @Published public var apiKey: String = "" {
         didSet {
-            KeychainHelper.saveKey(apiKey)
-            // Remove from defaults if it was previously stored there
-            defaults.removeObject(forKey: keyDefaultsKey)
-            defaults.removeObject(forKey: legacyKeyDefaultsKey)
+            defaults.set(apiKey, forKey: keyDefaultsKey)
         }
     }
 
@@ -106,15 +41,9 @@ public final class SettingsStore: ObservableObject {
     }
 
     public init() {
-        // Load API key from Keychain first
-        if let keychainKey = KeychainHelper.loadKey(), !keychainKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            self.apiKey = keychainKey
-        } else if let saved = (defaults.string(forKey: keyDefaultsKey) ?? defaults.string(forKey: legacyKeyDefaultsKey)), !saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            // Migrate from legacy UserDefaults to Keychain
+        // Load API key from UserDefaults, or environment, or .env files
+        if let saved = (defaults.string(forKey: keyDefaultsKey) ?? defaults.string(forKey: legacyKeyDefaultsKey)), !saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             self.apiKey = saved
-            KeychainHelper.saveKey(saved)
-            defaults.removeObject(forKey: keyDefaultsKey)
-            defaults.removeObject(forKey: legacyKeyDefaultsKey)
         } else if let envKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"], !envKey.isEmpty {
             self.apiKey = envKey
         } else if let foundKey = Self.findEnvFileKey() {
