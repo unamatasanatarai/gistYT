@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/unamatasanatarai/yt-summarize/releases"><img src="https://img.shields.io/github/v/release/unamatasanatarai/yt-summarize?label=release" alt="Latest Release" /></a>
+  <a href="https://github.com/unamatasanatarai/gistYT/releases"><img src="https://img.shields.io/github/v/release/unamatasanatarai/gistYT?label=release" alt="Latest Release" /></a>
   <img src="https://img.shields.io/badge/macOS-12.0%2B-blue?logo=apple" alt="macOS 12.0+" />
   <img src="https://img.shields.io/badge/Swift-Native%20AppKit-F05138?logo=swift&logoColor=white" alt="Swift AppKit" />
   <img src="https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white" alt="Python 3.14" />
@@ -55,7 +55,7 @@ If a model is overloaded, rate-limited, returns malformed JSON, or encounters a 
 
 ### Two Native Interfaces
 * **macOS Desktop App**: Pure Swift and AppKit. Features a split-view library, live Markdown preview, quick clipboard paste (`⌘V`), Finder reveal, and local document management.
-* **Command Line Interface**: Scriptable Python CLI powered by `uv`. Supports decoupled single-command runs (`./gistyt <url>`) or separate transcript fetching (`yt-transcript`) to review captions before spending Gemini API quota (`yt-summarize`).
+* **Command Line Interface**: Scriptable Python CLI powered by `uv`. Supports decoupled single-command runs (`./gistyt <url>`) or separate transcript fetching (`gistyt-transcript`) to review captions before spending Gemini API quota (`gistyt-summarize`).
 
 ### Local-First Plain-Text Storage
 Saves all summaries as standard Markdown (`.md`) and raw transcripts as plain text (`.txt`) directly in `summaries/` and `transcriptions/` (or `~/Documents/gistYT/`). Your notes remain human-readable, searchable, and compatible with Obsidian, Notion, Logseq, and Git.
@@ -96,7 +96,7 @@ Supports extracting subtitles from age-restricted, unlisted, or membership-only 
 | **Technology** | Swift / AppKit | Python 3.14 / uv |
 | **User Interface** | Split-view library + Markdown viewer | Terminal stdout / Markdown files |
 | **One-Click Ingestion** | `⌘V` (Paste) + `Return` | `./gistyt <url>` |
-| **Decoupled Fetching** | Segmented Brief/Transcript toggle | `yt-transcript` & `yt-summarize` |
+| **Decoupled Fetching** | Segmented Brief/Transcript toggle | `gistyt-transcript` & `gistyt-summarize` |
 | **Finder Integration** | Reveal in Finder & Move to Trash | Standard directory output |
 | **Configuration** | In-app Settings Sheet (`⌘,`) | `.env` file or environment variables |
 
@@ -106,7 +106,7 @@ Supports extracting subtitles from age-restricted, unlisted, or membership-only 
 
 ### 1. macOS Desktop Application
 
-1. Download **`gistYT-<version>.dmg`** from the [Latest Release](https://github.com/unamatasanatarai/yt-summarize/releases).
+1. Download **`gistYT-<version>.dmg`** from the [Latest Release](https://github.com/unamatasanatarai/gistYT/releases).
 2. Open the `.dmg` and drag **gistYT** into your `/Applications` directory.
 3. Open Settings (`⌘,`) and paste your [Gemini API Key](https://aistudio.google.com/apikey).
 
@@ -137,16 +137,14 @@ cp .env.example .env
 ./gistyt "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 ```
 
-*(Note: `./gist` is also preserved as a backward-compatible alias to `./gistyt`.)*
-
 #### Two-Step Inspection Workflow
 
 ```bash
 # 1. Fetch transcript without calling Gemini
-uv run yt-transcript "https://youtu.be/dQw4w9WgXcQ"
+uv run gistyt-transcript "https://youtu.be/dQw4w9WgXcQ"
 
 # 2. Review the saved .txt file, then summarize when ready
-uv run yt-summarize transcriptions/rick-astley-never-gonna-give-you-up-official-video-4k-remaster.txt
+uv run gistyt-summarize transcriptions/rick-astley-never-gonna-give-you-up-official-video-4k-remaster.txt
 ```
 
 ---

@@ -1,4 +1,4 @@
-"""yt-transcript: YouTube URL/ID -> captions -> transcriptions/<slug>.txt.
+"""gistyt-transcript: YouTube URL/ID -> captions -> transcriptions/<slug>.txt.
 
 yt-dlp is the primary source (metadata + json3 captions). youtube-transcript-api
 is used only when yt-dlp raises (extract_info or the json3 download fails).
@@ -364,7 +364,7 @@ def _parse_langs(value: str) -> list[str]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="yt-transcript",
+        prog="gistyt-transcript",
         description="Fetch a YouTube video's captions and save them to transcriptions/<slug>.txt.",
     )
     parser.add_argument("video", help="YouTube URL (watch, youtu.be, shorts, embed, live) or 11-character video ID")
@@ -400,7 +400,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Captions: {result.captions}")
     path, overwrote = save_transcript(result, args.out_dir)
     print(f"{'Overwrote' if overwrote else 'Saved'} {path}")
-    print(f"Next: uv run yt-summarize {shlex.quote(str(path))}")
+    print(f"Next: uv run gistyt-summarize {shlex.quote(str(path))}")
     return 0
 
 

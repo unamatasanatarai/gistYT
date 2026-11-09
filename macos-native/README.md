@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/unamatasanatarai/yt-summarize/releases"><img src="https://img.shields.io/github/v/release/unamatasanatarai/yt-summarize?label=release" alt="Latest Release" /></a>
+  <a href="https://github.com/unamatasanatarai/gistYT/releases"><img src="https://img.shields.io/github/v/release/unamatasanatarai/gistYT?label=release" alt="Latest Release" /></a>
   <img src="https://img.shields.io/badge/macOS-12.0%2B-blue?logo=apple" alt="macOS 12.0+" />
   <img src="https://img.shields.io/badge/Swift-Native%20AppKit-F05138?logo=swift&logoColor=white" alt="Swift AppKit" />
   <img src="https://img.shields.io/badge/Gemini-3.8%20%7C%203.6%20%7C%203.5-4285F4?logo=googlegemini&logoColor=white" alt="Gemini Rotation" />
@@ -92,7 +92,7 @@ Access captions from age-gated, unlisted, or member-only videos by delegating au
 
 ### Download the Application
 
-1. Download the latest **`gistYT-<version>.dmg`** package from the [Releases](https://github.com/unamatasanatarai/yt-summarize/releases) page.
+1. Download the latest **`gistYT-<version>.dmg`** package from the [Releases](https://github.com/unamatasanatarai/gistYT/releases) page.
 2. Open the disk image and drag **gistYT** into your `/Applications` directory.
 3. Launch **gistYT**, open Settings (`⌘,`), and enter your [Gemini API Key](https://aistudio.google.com/apikey).
 

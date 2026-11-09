@@ -325,4 +325,4 @@ def test_make_client_passes_key_and_disables_retries(monkeypatch):
 
 def test_summarize_module_does_not_import_transcript():
     source = Path(S.__file__).read_text(encoding="utf-8")
-    assert "transcript import" not in source and "import gistyt.transcript" not in source and "import yt_summarize.transcript" not in source
+    assert "transcript import" not in source and "import gistyt.transcript" not in source

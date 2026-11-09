@@ -1,1 +1,1 @@
-"""gistYT: YouTube transcript fetcher (yt-transcript) and Gemini summarizer (yt-summarize / gistyt)."""
+"""gistYT: YouTube transcript fetcher (gistyt-transcript) and Gemini summarizer (gistyt-summarize / gistyt)."""

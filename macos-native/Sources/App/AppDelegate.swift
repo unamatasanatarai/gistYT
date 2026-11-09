@@ -39,7 +39,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         win.minSize = NSSize(width: 800, height: 560)
-        win.title = "\(AppConfig.appName) — YouTube Summarizer"
+        win.title = AppConfig.appName
         win.center()
         win.contentViewController = hostingController
         win.makeKeyAndOrderFront(nil)

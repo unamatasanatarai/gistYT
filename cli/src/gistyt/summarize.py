@@ -1,6 +1,6 @@
-"""yt-summarize: transcript .txt -> Gemini (model rotation) -> stdout + summaries/<slug>.md.
+"""gistyt-summarize: transcript .txt -> Gemini (model rotation) -> stdout + summaries/<slug>.md.
 
-Works on any transcript file in the yt-transcript format: "Key: value" header
+Works on any transcript file in the gistyt-transcript format: "Key: value" header
 lines, a blank line, then the transcript text. The API key is GEMINI_API_KEY,
 read from the environment or from .env in the current directory.
 """
@@ -229,10 +229,10 @@ def make_client(api_key: str) -> Any:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="yt-summarize",
+        prog="gistyt-summarize",
         description="Summarize a transcript file with Gemini; print Markdown and save summaries/<slug>.md.",
     )
-    parser.add_argument("transcript", type=Path, help="path to a transcript .txt (e.g. from yt-transcript)")
+    parser.add_argument("transcript", type=Path, help="path to a transcript .txt (e.g. from gistyt-transcript)")
     parser.add_argument(
         "--model",
         metavar="MODELS",

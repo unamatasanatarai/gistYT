@@ -15,8 +15,8 @@ dependencies = [
 
 [project.scripts]
 gistyt = "gistyt.summarize:main"
-yt-transcript = "gistyt.transcript:main"
-yt-summarize = "gistyt.summarize:main"
+gistyt-transcript = "gistyt.transcript:main"
+gistyt-summarize = "gistyt.summarize:main"
 
 [build-system]
 requires = ["uv_build>=0.12.3,<0.13.0"]

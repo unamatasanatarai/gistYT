@@ -72,22 +72,22 @@ Summaries try a list of Gemini models in order. If a model is overloaded, rate-l
 Gemini must reply in a fixed JSON schema, and the reply is checked with Pydantic before any Markdown is written. A malformed reply counts as a failure and passes the request to the next model.
 
 ### Check the transcript before you spend quota
-Fetching and summarizing are two separate commands. `yt-transcript` never calls Gemini, so you can check the transcript first and only then spend your quota.
+Fetching and summarizing are two separate commands. `gistyt-transcript` never calls Gemini, so you can check the transcript first and only then spend your quota.
 
 ## How It Works
 
 ```text
-YouTube URL ──▶ yt-transcript ──▶ transcriptions/<title>.txt ──▶ yt-summarize ──▶ summaries/<title>.md
-                (yt-dlp, with                                    (Gemini, with
-                 youtube-transcript-api fallback)                 model rotation)
+YouTube URL ──▶ gistyt-transcript ──▶ transcriptions/<title>.txt ──▶ gistyt-summarize ──▶ summaries/<title>.md
+                (yt-dlp, with                                        (Gemini, with
+                 youtube-transcript-api fallback)                    model rotation)
 ```
 
-1. **You paste a link.** `yt-transcript` reads the video ID, fetches the title, channel and duration, and picks the best caption track.
+1. **You paste a link.** `gistyt-transcript` reads the video ID, fetches the title, channel and duration, and picks the best caption track.
 2. **It saves the transcript.** The file is plain text with a short header (`Title`, `Channel`, `URL`, `Duration`, `Captions`), named after the video title.
-3. **Gemini summarizes it.** `yt-summarize` sends the transcript through the model rotation and checks the structured reply.
+3. **Gemini summarizes it.** `gistyt-summarize` sends the transcript through the model rotation and checks the structured reply.
 4. **You get Markdown.** The summary is printed to your terminal and saved to `summaries/`.
 
-`yt-summarize` accepts any transcript file in this format, not only ones made by `yt-transcript`.
+`gistyt-summarize` accepts any transcript file in this format, not only ones made by `gistyt-transcript`.
 
 ## Quick Start
 
@@ -103,31 +103,29 @@ cp .env.example .env    # then set GEMINI_API_KEY
 
 ```sh
 ./gistyt "https://youtu.be/dQw4w9WgXcQ"
-./gistyt dQw4w9WgXcQ --model gemini-3.5-flash-lite   # extra options go to yt-summarize
+./gistyt dQw4w9WgXcQ --model gemini-3.5-flash-lite   # extra options go to gistyt-summarize
 ```
-
-*(Note: `./gist` is maintained as a shortcut alias to `./gistyt`.)*
 
 The script fetches the transcript, then summarizes it. If fetching fails, it stops before calling Gemini.
 
 ### Step by step
 
 ```sh
-$ uv run yt-transcript "https://youtu.be/dQw4w9WgXcQ?si=abc"
+$ uv run gistyt-transcript "https://youtu.be/dQw4w9WgXcQ?si=abc"
 Fetching: Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)
 Captions: en (manual)
 Saved transcriptions/rick-astley-never-gonna-give-you-up-official-video-4k-remaster.txt
-Next: uv run yt-summarize transcriptions/rick-astley-never-gonna-give-you-up-official-video-4k-remaster.txt
+Next: uv run gistyt-summarize transcriptions/rick-astley-never-gonna-give-you-up-official-video-4k-remaster.txt
 
-$ uv run yt-summarize transcriptions/rick-astley-never-gonna-give-you-up-official-video-4k-remaster.txt
+$ uv run gistyt-summarize transcriptions/rick-astley-never-gonna-give-you-up-official-video-4k-remaster.txt
 ```
 
 ## Command Reference
 
-### `yt-transcript`
+### `gistyt-transcript`
 
 ```text
-uv run yt-transcript VIDEO [--lang CODES] [--out-dir DIR] [-v]
+uv run gistyt-transcript VIDEO [--lang CODES] [--out-dir DIR] [-v]
 ```
 
 | Option | Effect |
@@ -138,10 +136,10 @@ uv run yt-transcript VIDEO [--lang CODES] [--out-dir DIR] [-v]
 
 Each run overwrites `transcriptions/<slug>.txt`. If the title gives an empty slug (for example, an all-emoji title), the video ID is used as the filename. A video with no captions ends with an error and no file is written.
 
-### `yt-summarize`
+### `gistyt-summarize`
 
 ```text
-uv run yt-summarize TRANSCRIPT.txt [--model MODELS] [--out-dir DIR]
+uv run gistyt-summarize TRANSCRIPT.txt [--model MODELS] [--out-dir DIR]
 ```
 
 | Option | Effect |

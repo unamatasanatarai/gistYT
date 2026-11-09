@@ -334,7 +334,7 @@ def test_main_success_prints_next_hint(tmp_path, monkeypatch, capsys):
     assert f"Fetching: {TITLE}" in out
     assert "Captions: en (manual)" in out
     assert f"Saved {expected}" in out
-    assert f"Next: uv run yt-summarize {expected}" in out
+    assert f"Next: uv run gistyt-summarize {expected}" in out
     assert expected.exists()
 
 
@@ -349,4 +349,4 @@ def test_main_no_captions_exits_nonzero_and_writes_nothing(tmp_path, monkeypatch
 
 def test_transcript_module_does_not_import_summarizer():
     source = Path(T.__file__).read_text(encoding="utf-8")
-    assert "summarize import" not in source and "import gistyt.summarize" not in source and "import yt_summarize.summarize" not in source
+    assert "summarize import" not in source and "import gistyt.summarize" not in source
