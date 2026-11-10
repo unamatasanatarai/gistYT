@@ -7,14 +7,29 @@ public enum DetailViewMode: String, CaseIterable, Identifiable {
     case transcript = "Transcript"
 
     public var id: String { rawValue }
+
+    public var shortTitle: String {
+        switch self {
+        case .preview: return "Preview"
+        case .rawMarkdown: return "Markdown"
+        case .transcript: return "Transcript"
+        }
+    }
+}
+
+/// One in-flight video: its task (for cancellation) and the status shown on its row.
+struct SummaryJob {
+    let videoID: String
+    var status: String
+    var task: Task<Void, Never>? = nil
 }
 
 public struct MainAppView: View {
     @ObservedObject var settings = SettingsStore.shared
 
     @State private var inputURL: String = ""
-    @State private var isProcessing: Bool = false
-    @State private var statusMessage: String = ""
+    /// Running fetch+summarize jobs, keyed by their placeholder row's slug.
+    @State private var jobs: [String: SummaryJob] = [:]
     @State private var errorMessage: String? = nil
 
     @State private var currentMarkdown: String = ""
@@ -31,6 +46,8 @@ public struct MainAppView: View {
     @State private var showClearAllAlert: Bool = false
     @State private var copiedNotice: String? = nil
     @State private var hoveredSlug: String? = nil
+    @State private var showSidebar: Bool = true
+    @FocusState private var isURLFieldFocused: Bool
 
     public init() {}
 
@@ -46,42 +63,53 @@ public struct MainAppView: View {
     }
 
     public var body: some View {
-        HSplitView {
-            // Left Sidebar: Minimalist Library
-            sidebarView
-                .frame(minWidth: 260, idealWidth: 280, maxWidth: 360)
-
-            // Right Main Content Area
-            VStack(spacing: 0) {
-                // Top Unified Search & Action Bar
-                topActionBar
-
-                // Subtle Thin Progress Line
-                if isProcessing {
-                    ProgressView()
-                        .progressViewStyle(LinearProgressViewStyle())
-                        .frame(height: 2)
-                } else {
-                    Divider()
+        ZStack(alignment: .top) {
+            HSplitView {
+                if showSidebar {
+                    // Left Sidebar: Minimalist Library
+                    sidebarView
+                        .frame(minWidth: 160, idealWidth: 220, maxWidth: 360)
                 }
 
-                // Error / Notice Toast
-                if let error = errorMessage {
-                    errorBanner(text: error)
-                }
+                // Right Main Content Area
+                VStack(spacing: 0) {
+                    // Top Unified Search & Action Bar
+                    topActionBar
 
-                // Main Viewer
-                if let selected = savedItems.first(where: { $0.slug == selectedSlug }), selected.isLoading {
-                    inProgressCalloutView(item: selected)
-                } else if !currentMarkdown.isEmpty {
-                    detailContentView
-                } else {
-                    emptyStateView
+                    // Subtle Thin Progress Line
+                    if !jobs.isEmpty {
+                        ProgressView()
+                            .progressViewStyle(LinearProgressViewStyle())
+                            .frame(height: 2)
+                    } else {
+                        Divider()
+                    }
+
+                    // Error / Notice Toast
+                    if let error = errorMessage {
+                        errorBanner(text: error)
+                    }
+
+                    // Main Viewer
+                    if let selected = savedItems.first(where: { $0.slug == selectedSlug }), selected.isLoading {
+                        inProgressCalloutView(item: selected)
+                    } else if !currentMarkdown.isEmpty {
+                        detailContentView
+                    } else {
+                        emptyStateView
+                    }
                 }
+                .frame(minWidth: 240)
             }
-            .frame(minWidth: 520)
+
+            // Gentle Popout Toast
+            if let notice = copiedNotice {
+                gentleNoticeToast(notice: notice)
+                    .padding(.top, 54)
+                    .zIndex(100)
+            }
         }
-        .frame(minWidth: 840, minHeight: 580)
+        .frame(minWidth: 400, minHeight: 500)
         .sheet(isPresented: $showSettings) {
             SettingsSheet()
         }
@@ -101,20 +129,52 @@ public struct MainAppView: View {
             }
         }
         .background(
-            Button(action: refreshSavedItems) { EmptyView() }
-                .keyboardShortcut("r", modifiers: .command)
-                .opacity(0)
+            ZStack {
+                Button(action: refreshSavedItems) { EmptyView() }
+                    .keyboardShortcut("r", modifiers: .command)
+                Button(action: cancelSelectedJob) { EmptyView() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .opacity(0)
         )
         .onAppear {
             refreshSavedItems()
             checkForClipboardURL()
+            focusURLField()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // Returning to the app: put the cursor back in the URL field unless
+            // the user is already typing somewhere else (e.g. history search).
+            if !(NSApp.keyWindow?.firstResponder is NSTextView) {
+                focusURLField()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .confirmQuitRequested)) { _ in
+            showNotice("Press ⌘Q again to quit")
         }
     }
 
     // MARK: - Top Unified Input Bar
 
     private var topActionBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
+            // Sidebar Toggle
+            Button(action: { withAnimation(.easeInOut(duration: 0.15)) { showSidebar.toggle() } }) {
+                Image(systemName: "sidebar.leading")
+                    .font(.system(size: 13))
+                    .foregroundColor(showSidebar ? .secondary : Color(red: 0.12, green: 0.44, blue: 0.94))
+                    .frame(width: 30, height: 30)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(showSidebar ? "Hide Sidebar (⌘⌥S)" : "Show Sidebar (⌘⌥S)")
+            .keyboardShortcut("s", modifiers: [.command, .option])
+
             // Unified Spotlight-style Address Capsule
             HStack(spacing: 8) {
                 Image(systemName: "play.circle.fill")
@@ -124,8 +184,10 @@ public struct MainAppView: View {
                 TextField("Paste YouTube link or enter video ID...", text: $inputURL)
                     .textFieldStyle(PlainTextFieldStyle())
                     .font(.system(size: 13, weight: .regular))
+                    .focused($isURLFieldFocused)
                     .onSubmit {
                         startSummarizing()
+                        focusURLField()
                     }
 
                 // Quick Paste Badge (if empty & clipboard has a link)
@@ -160,18 +222,10 @@ public struct MainAppView: View {
                 // Action Pill: Get Gist
                 Button(action: startSummarizing) {
                     HStack(spacing: 5) {
-                        if isProcessing {
-                            ProgressView()
-                                .scaleEffect(0.6)
-                                .frame(width: 12, height: 12)
-                            Text("Working...")
-                                .font(.system(size: 12, weight: .semibold))
-                        } else {
-                            Text("Get Gist")
-                                .font(.system(size: 12, weight: .semibold))
-                            Image(systemName: "arrow.right")
-                                .font(.system(size: 10, weight: .bold))
-                        }
+                        Text("Get Gist")
+                            .font(.system(size: 12, weight: .semibold))
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 10, weight: .bold))
                     }
                     .foregroundColor(hasValidInput ? .white : Color.primary.opacity(0.35))
                     .padding(.horizontal, 11)
@@ -182,7 +236,7 @@ public struct MainAppView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .disabled(!hasValidInput || isProcessing)
+                .disabled(!hasValidInput)
                 .keyboardShortcut(.defaultAction)
             }
             .padding(7)
@@ -248,11 +302,13 @@ public struct MainAppView: View {
                     ForEach(DetailViewMode.allCases) { mode in
                         let active = (viewMode == mode)
                         Button(action: { viewMode = mode }) {
-                            Text(mode.rawValue)
-                                .font(.system(size: 12, weight: active ? .semibold : .regular))
+                            Text(mode.shortTitle)
+                                .font(.system(size: 11, weight: active ? .semibold : .regular))
                                 .foregroundColor(active ? .primary : .secondary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 5)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 4)
                                 .background(
                                     RoundedRectangle(cornerRadius: 6)
                                         .fill(active ? Color.primary.opacity(0.07) : Color.clear)
@@ -303,16 +359,8 @@ public struct MainAppView: View {
                         .help("Move brief to Trash (⌫)")
                     }
                 }
-
-                // Copy Notice Toast
-                if let notice = copiedNotice {
-                    Text(notice)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .transition(.opacity)
-                }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(Color(NSColor.windowBackgroundColor))
 
@@ -371,7 +419,7 @@ public struct MainAppView: View {
                         ProgressView()
                             .scaleEffect(0.8)
                             .frame(width: 14, height: 14)
-                        Text(statusMessage.isEmpty ? "Distilling captions & brewing your brief..." : statusMessage)
+                        Text(jobs[item.slug]?.status ?? "Distilling captions & brewing your brief...")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.secondary)
                     }
@@ -379,6 +427,10 @@ public struct MainAppView: View {
                     Text(item.title)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundColor(.secondary.opacity(0.6))
+
+                    Button("Cancel") { cancelJob(item.slug) }
+                        .help("Stop this video (Esc)")
+                        .padding(.top, 6)
                 }
                 .padding(.top, 4)
 
@@ -518,7 +570,7 @@ public struct MainAppView: View {
                     .foregroundColor(item.isLoading ? .secondary : .primary)
 
                 HStack(alignment: .center) {
-                    if let ch = item.channel {
+                    if let ch = item.isLoading ? jobs[item.slug]?.status : item.channel {
                         Text(ch)
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
@@ -526,7 +578,16 @@ public struct MainAppView: View {
                     }
                     Spacer()
 
-                    if isHovered && !item.isLoading {
+                    if isHovered && item.isLoading {
+                        Button(action: { cancelJob(item.slug) }) {
+                            Image(systemName: "xmark.circle")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary.opacity(0.8))
+                                .padding(2)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Cancel")
+                    } else if isHovered {
                         Button(action: { deleteItem(item) }) {
                             Image(systemName: "trash")
                                 .font(.system(size: 10))
@@ -573,7 +634,11 @@ public struct MainAppView: View {
             hoveredSlug = h ? item.slug : nil
         }
         .contextMenu {
-            if !item.isLoading {
+            if item.isLoading {
+                Button(action: { cancelJob(item.slug) }) {
+                    Label("Cancel", systemImage: "xmark.circle")
+                }
+            } else {
                 Button(role: .destructive, action: { deleteItem(item) }) {
                     Label("Move to Trash", systemImage: "trash")
                 }
@@ -588,10 +653,14 @@ public struct MainAppView: View {
 
     // MARK: - Logic & Summarizing Pipeline
 
+    /// Starts a background job for the URL in the input field and immediately clears the
+    /// field, so URLs can be queued back to back (paste, Return, paste, Return...).
+    /// Each job owns a placeholder row in the sidebar until it finishes or fails.
     private func startSummarizing() {
-        guard !isProcessing else { return }
-
         let raw = inputURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Return can reach both onSubmit and the default button; the first call already
+        // took the URL and cleared the field, so the second must be a silent no-op.
+        guard !raw.isEmpty else { return }
         guard let videoID = VideoIDParser.parseVideoID(from: raw) else {
             errorMessage = "Please enter a valid YouTube video URL or ID."
             return
@@ -604,35 +673,63 @@ public struct MainAppView: View {
             return
         }
 
-        isProcessing = true
+        inputURL = ""
         errorMessage = nil
-        statusMessage = "Connecting..."
+        focusURLField()
 
-        let placeholderSlug = "loading_\(videoID)_\(UUID().uuidString.prefix(4))"
+        // The same video submitted twice while its first job runs: show that job instead
+        // of paying for a second fetch and summary.
+        if let running = jobs.first(where: { $0.value.videoID == videoID }) {
+            selectedSlug = running.key
+            return
+        }
+
+        // If a video id is already in the list of gisted videos, instead of running the action again, just focus on the existing gist
+        if let existing = savedItems.first(where: { item in
+            if item.isLoading { return false }
+            if item.videoID == videoID { return true }
+            if item.slug == videoID || item.slug.hasSuffix("-\(videoID)") { return true }
+            if let sumURL = item.summaryPath, StorageService.videoID(inFileAt: sumURL) == videoID { return true }
+            return false
+        }) {
+            if !searchQuery.isEmpty {
+                searchQuery = ""
+            }
+            loadSavedItem(existing)
+            showNotice("Focused existing gist")
+            return
+        }
+
+        let placeholderSlug = "loading_\(videoID)_\(UUID().uuidString.prefix(8))"
         let placeholderItem = SavedSummaryItem(
             slug: placeholderSlug,
             title: "Summarizing \(videoID)...",
-            channel: "Fetching captions...",
+            channel: nil,
             date: Date(),
             summaryPath: nil,
             transcriptPath: nil,
-            isLoading: true
+            isLoading: true,
+            videoID: videoID
         )
 
         savedItems.insert(placeholderItem, at: 0)
         selectedSlug = placeholderSlug
-        inputURL = ""
+        jobs[placeholderSlug] = SummaryJob(videoID: videoID, status: "Fetching captions...")
 
-        Task {
+        let preferredLangs = settings.parsedLanguages
+        let browserCookies = settings.browserCookies
+        let saveDirectory = settings.effectiveSaveDirectory
+
+        let task = Task {
             do {
-                await MainActor.run {
-                    statusMessage = "Fetching captions..."
-                }
                 let transcriptResult = try await YouTubeService.shared.fetchTranscript(
                     videoID: videoID,
-                    preferredLangs: settings.parsedLanguages,
-                    browserCookies: settings.browserCookies
+                    preferredLangs: preferredLangs,
+                    browserCookies: browserCookies
                 )
+                await MainActor.run {
+                    self.jobFetchedCaptions(placeholderSlug, title: transcriptResult.title)
+                }
 
                 let watchUrl = VideoIDParser.watchURL(for: videoID).absoluteString
                 var headerLines = ["Title: \(transcriptResult.title ?? "(unknown)")"]
@@ -649,12 +746,18 @@ public struct MainAppView: View {
                     apiKey: apiKey,
                     onStatusChange: { msg in
                         Task { @MainActor in
-                            self.statusMessage = msg
+                            self.setJobStatus(placeholderSlug, msg)
                         }
                     }
                 )
 
-                let slug = SlugGenerator.makeSlug(title: transcriptResult.title, videoID: videoID)
+                let (transDir, sumDir) = try await StorageService.shared.ensureDirectories(base: saveDirectory)
+                let slug = await StorageService.shared.uniqueSlug(
+                    SlugGenerator.makeSlug(title: transcriptResult.title, videoID: videoID),
+                    videoID: videoID,
+                    transcriptions: transDir,
+                    summaries: sumDir
+                )
                 let markdown = MarkdownRenderer.renderMarkdown(
                     summary: summary,
                     title: transcriptResult.title ?? slug,
@@ -666,7 +769,7 @@ public struct MainAppView: View {
                     date: Date()
                 )
 
-                let (transDir, sumDir) = try await StorageService.shared.ensureDirectories(base: settings.effectiveSaveDirectory)
+                try Task.checkCancellation()
                 let tURL = try await StorageService.shared.saveTranscript(
                     result: transcriptResult,
                     slug: slug,
@@ -678,45 +781,122 @@ public struct MainAppView: View {
                     directory: sumDir
                 )
 
+                let finalItem = SavedSummaryItem(
+                    slug: slug,
+                    title: transcriptResult.title ?? slug,
+                    channel: transcriptResult.channel,
+                    date: Date(),
+                    summaryPath: sURL,
+                    transcriptPath: tURL,
+                    isLoading: false,
+                    videoID: videoID
+                )
                 await MainActor.run {
-                    self.currentMarkdown = markdown
-                    self.currentTranscript = fullTranscriptText
-                    self.currentTitle = transcriptResult.title ?? slug
-                    self.currentSummaryURL = sURL
-                    self.currentTranscriptURL = tURL
-                    self.viewMode = .preview
-                    self.isProcessing = false
-                    self.statusMessage = ""
-
-                    let finalItem = SavedSummaryItem(
-                        slug: slug,
-                        title: transcriptResult.title ?? slug,
-                        channel: transcriptResult.channel,
-                        date: Date(),
-                        summaryPath: sURL,
-                        transcriptPath: tURL,
-                        isLoading: false
+                    self.jobSucceeded(
+                        placeholderSlug,
+                        item: finalItem,
+                        markdown: markdown,
+                        transcript: fullTranscriptText
                     )
-                    self.savedItems.removeAll(where: { $0.slug == placeholderSlug || $0.slug == slug })
-                    self.savedItems.insert(finalItem, at: 0)
-                    self.selectedSlug = slug
                 }
             } catch {
+                let cancelled = isCancellationError(error)
                 await MainActor.run {
-                    self.isProcessing = false
-                    self.errorMessage = error.localizedDescription
-                    self.savedItems.removeAll(where: { $0.slug == placeholderSlug })
-                    if self.selectedSlug == placeholderSlug {
-                        self.selectedSlug = self.savedItems.first?.slug
-                    }
+                    self.jobFailed(placeholderSlug, videoID: videoID, error: error, cancelled: cancelled)
                 }
             }
+        }
+        jobs[placeholderSlug]?.task = task
+    }
+
+    private func setJobStatus(_ placeholderSlug: String, _ status: String) {
+        jobs[placeholderSlug]?.status = status
+    }
+
+    private func jobFetchedCaptions(_ placeholderSlug: String, title: String?) {
+        if let title = title, let index = savedItems.firstIndex(where: { $0.slug == placeholderSlug }) {
+            savedItems[index].title = title
+        }
+        setJobStatus(placeholderSlug, "Summarizing...")
+    }
+
+    private func jobSucceeded(_ placeholderSlug: String, item: SavedSummaryItem, markdown: String, transcript: String) {
+        jobs[placeholderSlug] = nil
+
+        // Replace the placeholder in place so rows don't jump around while other jobs
+        // are still running; drop an older row for the same file (a re-run).
+        savedItems.removeAll(where: { $0.slug == item.slug && !$0.isLoading })
+        if let index = savedItems.firstIndex(where: { $0.slug == placeholderSlug }) {
+            savedItems[index] = item
+        } else {
+            savedItems.insert(item, at: 0)
+        }
+
+        // Only take over the detail pane if the user is still watching this job.
+        if selectedSlug == placeholderSlug {
+            selectedSlug = item.slug
+            currentMarkdown = markdown
+            currentTranscript = transcript
+            currentTitle = item.title
+            currentSummaryURL = item.summaryPath
+            currentTranscriptURL = item.transcriptPath
+            viewMode = .preview
+        }
+    }
+
+    private func jobFailed(_ placeholderSlug: String, videoID: String, error: Error, cancelled: Bool) {
+        jobs[placeholderSlug] = nil
+        let title = savedItems.first(where: { $0.slug == placeholderSlug })?.title ?? videoID
+        if cancelled {
+            showNotice("Cancelled")
+        } else {
+            errorMessage = "\(title): \(error.localizedDescription)"
+        }
+        savedItems.removeAll(where: { $0.slug == placeholderSlug })
+        if selectedSlug == placeholderSlug {
+            selectFallbackItem()
+        }
+    }
+
+    /// Cancels one job: terminates its yt-dlp run and aborts its in-flight HTTP requests.
+    /// The job's catch block then removes its placeholder row.
+    private func cancelJob(_ placeholderSlug: String) {
+        jobs[placeholderSlug]?.task?.cancel()
+    }
+
+    /// Esc: cancel the job whose placeholder is selected.
+    private func cancelSelectedJob() {
+        if let slug = selectedSlug, jobs[slug] != nil {
+            cancelJob(slug)
+        }
+    }
+
+    /// After the selected row disappears, select the next row and show it.
+    private func selectFallbackItem() {
+        if let next = savedItems.first {
+            selectedSlug = next.slug
+            if !next.isLoading {
+                loadSavedItem(next)
+            }
+        } else {
+            selectedSlug = nil
         }
     }
 
     private func pasteFromClipboard() {
         guard let string = NSPasteboard.general.string(forType: .string) else { return }
         inputURL = string.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Puts the text cursor in the URL field. Deferred one runloop tick (and backed up by 0.1s)
+    /// because on macOS 12 setting focus before the window is key or during list layout is silently ignored.
+    private func focusURLField() {
+        DispatchQueue.main.async {
+            self.isURLFieldFocused = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.isURLFieldFocused = true
+        }
     }
 
     private func checkForClipboardURL() {
@@ -745,11 +925,59 @@ public struct MainAppView: View {
     }
 
     private func showNotice(_ text: String) {
-        copiedNotice = text
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            if copiedNotice == text {
-                copiedNotice = nil
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.72)) {
+            copiedNotice = text
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+            if self.copiedNotice == text {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    self.copiedNotice = nil
+                }
             }
+        }
+    }
+
+    private func gentleNoticeToast(notice: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: noticeIcon(for: notice))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(Color(red: 0.12, green: 0.44, blue: 0.94))
+
+            Text(notice)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(Color(NSColor.windowBackgroundColor))
+                .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 5)
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+        .transition(
+            .asymmetric(
+                insertion: .scale(scale: 0.85).combined(with: .opacity).combined(with: .offset(y: -8)),
+                removal: .scale(scale: 0.92).combined(with: .opacity)
+            )
+        )
+    }
+
+    private func noticeIcon(for text: String) -> String {
+        if text.contains("⌘Q") || text.contains("quit") {
+            return "command"
+        } else if text.contains("exist") || text.contains("Focus") {
+            return "arrow.right.circle.fill"
+        } else if text.contains("cop") || text.contains("Cop") {
+            return "checkmark.circle.fill"
+        } else if text.contains("Cancel") {
+            return "xmark.circle.fill"
+        } else {
+            return "info.circle.fill"
         }
     }
 

@@ -310,6 +310,17 @@ def test_save_overwrites_and_reports(tmp_path):
     assert path.read_text(encoding="utf-8").endswith("\nNew.\n")
 
 
+def test_save_does_not_overwrite_another_videos_transcript(tmp_path):
+    first, _ = save_transcript(result(), tmp_path)
+    other_id = "abcdefghijk"
+    second, overwrote = save_transcript(result(video_id=other_id, text="Other."), tmp_path)
+    assert second == tmp_path / f"{SLUG}-{other_id}.txt" and not overwrote
+    assert first.read_text(encoding="utf-8").endswith("\nHello.\n\nWorld.\n")
+    # Re-running the second video lands on its own file again.
+    third, overwrote3 = save_transcript(result(video_id=other_id, text="Again."), tmp_path)
+    assert third == second and overwrote3
+
+
 def test_save_uses_video_id_for_empty_slug(tmp_path):
     path, _ = save_transcript(result(title="🚀🔥"), tmp_path)
     assert path.name == f"{ID}.txt"

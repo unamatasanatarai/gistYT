@@ -63,6 +63,7 @@ public actor GeminiService {
         var attempts: [String] = []
 
         for (index, model) in models.enumerated() {
+            try Task.checkCancellation()
             onStatusChange?("Summarizing with \(model)...")
 
             do {
@@ -76,6 +77,9 @@ public actor GeminiService {
                 // Fatal non-rotatable errors
                 throw error
             } catch {
+                // A cancelled request surfaces as URLError(.cancelled); it must end the
+                // rotation, not count as a model failure and move on to the next model.
+                if isCancellationError(error) { throw CancellationError() }
                 let reason = error.localizedDescription
                 attempts.append("\(model): \(reason)")
                 if index + 1 < models.count {

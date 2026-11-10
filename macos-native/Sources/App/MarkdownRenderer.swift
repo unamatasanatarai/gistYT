@@ -84,7 +84,11 @@ public enum MarkdownRenderer {
         let jsonString: String
         if let data = try? JSONSerialization.data(withJSONObject: [markdown]),
            var str = String(data: data, encoding: .utf8) {
-            str = str.replacingOccurrences(of: "</", with: "<\\/")
+            // Escape every '<', not just "</": "<!--" plus "<script" inside script data
+            // puts the HTML parser in the double-escaped state, so the real </script>
+            // stops closing the element. JSON only contains '<' inside string literals,
+            // where < is a valid escape.
+            str = str.replacingOccurrences(of: "<", with: "\\u003c")
             jsonString = "\(str)[0]"
         } else {
             jsonString = "''"

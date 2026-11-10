@@ -24,9 +24,16 @@ public actor YouTubeService {
     public static let shared = YouTubeService()
 
     private let session: URLSession
+    private let ytDlpOverride: URL?
+    private let ytDlpTimeout: TimeInterval
 
-    public init(session: URLSession = .shared) {
+    /// - Parameters:
+    ///   - ytDlpURL: explicit yt-dlp executable (tests); nil searches the bundle and PATH.
+    ///   - ytDlpTimeout: wall-clock limit for each yt-dlp run before it is terminated.
+    public init(session: URLSession = .shared, ytDlpURL: URL? = nil, ytDlpTimeout: TimeInterval = 120) {
         self.session = session
+        self.ytDlpOverride = ytDlpURL
+        self.ytDlpTimeout = ytDlpTimeout
     }
 
     public func fetchTranscript(
@@ -35,6 +42,7 @@ public actor YouTubeService {
         browserCookies: String? = nil
     ) async throws -> TranscriptResult {
         // Method 1: Try bundled yt-dlp first (handles bot confirmation, SABR, visionos/android rotation)
+        var ytDlpError: Error?
         if let ytDlpURL = ytDlpExecutableURL {
             do {
                 return try await fetchWithYtDlp(
@@ -43,18 +51,36 @@ public actor YouTubeService {
                     preferredLangs: preferredLangs,
                     browserCookies: browserCookies
                 )
+            } catch YouTubeError.noCaptions {
+                // yt-dlp saw the full track list and none matched; the fallback would agree.
+                throw YouTubeError.noCaptions
             } catch {
+                if isCancellationError(error) { throw CancellationError() }
                 NSLog("Bundled yt-dlp failed (\(error.localizedDescription)); attempting direct HTTP fallback...")
+                ytDlpError = error
             }
         }
 
         // Method 2: Fallback to direct HTTP Innertube API
-        return try await fetchDirectHTTP(videoID: videoID, preferredLangs: preferredLangs)
+        do {
+            return try await fetchDirectHTTP(videoID: videoID, preferredLangs: preferredLangs)
+        } catch {
+            if isCancellationError(error) { throw CancellationError() }
+            // yt-dlp's "unavailable" errors carry the actionable reason (e.g. the bot check
+            // and the cookie hint); the fallback's error would only hide it.
+            if let ytErr = ytDlpError as? YouTubeError, case .videoUnavailable = ytErr {
+                throw ytErr
+            }
+            throw error
+        }
     }
 
     // MARK: - Bundled yt-dlp Implementation
 
     private var ytDlpExecutableURL: URL? {
+        if let override = ytDlpOverride {
+            return override
+        }
         if let bundleURL = Bundle.main.url(forResource: "yt-dlp", withExtension: nil),
            FileManager.default.isExecutableFile(atPath: bundleURL.path) {
             return bundleURL
@@ -89,6 +115,11 @@ public actor YouTubeService {
         FileManager.default.createFile(atPath: tmpOut.path, contents: nil)
         FileManager.default.createFile(atPath: tmpErr.path, contents: nil)
 
+        defer {
+            try? FileManager.default.removeItem(at: tmpOut)
+            try? FileManager.default.removeItem(at: tmpErr)
+        }
+
         guard let outHandle = FileHandle(forWritingAtPath: tmpOut.path),
               let errHandle = FileHandle(forWritingAtPath: tmpErr.path) else {
             throw YouTubeError.fetchFailed("Could not create temporary file handles for yt-dlp")
@@ -98,7 +129,8 @@ public actor YouTubeService {
             "--dump-json",
             "--skip-download",
             "--no-playlist",
-            "--no-warnings"
+            "--no-warnings",
+            "--socket-timeout", "20"
         ]
 
         if let cookies = browserCookies, !cookies.isEmpty, cookies.lowercased() != "none" {
@@ -107,31 +139,14 @@ public actor YouTubeService {
 
         args.append(watchURL)
 
-        let process = Process()
-        process.executableURL = executableURL
-        process.arguments = args
-        process.standardOutput = outHandle
-        process.standardError = errHandle
-
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            process.terminationHandler = { _ in
-                outHandle.closeFile()
-                errHandle.closeFile()
-                continuation.resume()
-            }
-            do {
-                try process.run()
-            } catch {
-                outHandle.closeFile()
-                errHandle.closeFile()
-                continuation.resume(throwing: error)
-            }
+        defer {
+            outHandle.closeFile()
+            errHandle.closeFile()
         }
+        try await runYtDlp(executableURL: executableURL, arguments: args, stdout: outHandle, stderr: errHandle)
 
         let outData = (try? Data(contentsOf: tmpOut)) ?? Data()
         let errStr = (try? String(contentsOf: tmpErr, encoding: .utf8)) ?? ""
-        try? FileManager.default.removeItem(at: tmpOut)
-        try? FileManager.default.removeItem(at: tmpErr)
 
         guard let json = (try? JSONSerialization.jsonObject(with: outData)) as? [String: Any] else {
             let cleanErr = errStr.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -169,6 +184,8 @@ public actor YouTubeService {
                 cues = parseJson3Events(cjson)
             }
         }
+        // `try?` above also swallows cancellation; don't start another yt-dlp run if so.
+        try Task.checkCancellation()
 
         // If direct URL failed or empty, run yt-dlp --write-sub to write the file directly
         if cues.isEmpty {
@@ -181,7 +198,9 @@ public actor YouTubeService {
         }
 
         if cues.isEmpty {
-            throw YouTubeError.noCaptions
+            // A track exists but its download failed: a fetch problem, not a missing transcript,
+            // so let fetchTranscript try the HTTP fallback.
+            throw YouTubeError.fetchFailed("Could not download the \(trackLang) caption track")
         }
 
         let text = CaptionFormatter.cuesToParagraphs(cues)
@@ -264,6 +283,7 @@ public actor YouTubeService {
             "--sub-format", "json3",
             "--no-playlist",
             "--no-warnings",
+            "--socket-timeout", "20",
             "-o", outPattern
         ]
 
@@ -273,20 +293,12 @@ public actor YouTubeService {
 
         args.append(watchURL)
 
-        let process = Process()
-        process.executableURL = executableURL
-        process.arguments = args
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            process.terminationHandler = { _ in continuation.resume() }
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: error)
-            }
-        }
+        try await runYtDlp(
+            executableURL: executableURL,
+            arguments: args,
+            stdout: FileHandle.nullDevice,
+            stderr: FileHandle.nullDevice
+        )
 
         guard let files = try? FileManager.default.contentsOfDirectory(atPath: tmpDir.path) else {
             return []
@@ -301,6 +313,49 @@ public actor YouTubeService {
         }
 
         return []
+    }
+
+    /// Runs yt-dlp to completion. Task cancellation terminates the process, and so does
+    /// `ytDlpTimeout`; without both, a hung run (e.g. an unanswered Keychain prompt from
+    /// --cookies-from-browser) would block the app until restart.
+    private func runYtDlp(
+        executableURL: URL,
+        arguments: [String],
+        stdout: FileHandle,
+        stderr: FileHandle
+    ) async throws {
+        let process = Process()
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        let controller = ProcessController(process)
+        let timeout = ytDlpTimeout
+
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                process.terminationHandler = { _ in continuation.resume() }
+                do {
+                    try controller.launch()
+                } catch {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                    controller.timeOut()
+                }
+            }
+        } onCancel: {
+            controller.cancel()
+        }
+
+        if controller.wasCancelled || Task.isCancelled {
+            throw CancellationError()
+        }
+        if controller.didTimeOut {
+            throw YouTubeError.fetchFailed("yt-dlp did not finish within \(Int(timeout)) seconds")
+        }
     }
 
     private func parseJson3Events(_ data: [String: Any]) -> [CaptionCue] {
@@ -387,7 +442,9 @@ public actor YouTubeService {
             throw YouTubeError.noCaptions
         }
 
-        let trackURL = URL(string: chosenTrack.baseUrl)!
+        guard let trackURL = URL(string: chosenTrack.baseUrl) else {
+            throw YouTubeError.fetchFailed("YouTube returned an invalid caption track URL")
+        }
         var timedtextReq = URLRequest(url: trackURL)
         timedtextReq.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
 
@@ -529,5 +586,56 @@ public actor YouTubeService {
         }
 
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// Serializes launch, cancellation and timeout for one yt-dlp process, so a cancel that
+/// arrives before launch still prevents the run, and terminate() is only called on a
+/// launched process (calling it before launch raises an Objective-C exception).
+private final class ProcessController: @unchecked Sendable {
+    private let lock = NSLock()
+    private let process: Process
+    private var launched = false
+    private var cancelled = false
+    private var timedOut = false
+
+    init(_ process: Process) {
+        self.process = process
+    }
+
+    func launch() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        if cancelled { throw CancellationError() }
+        try process.run()
+        launched = true
+    }
+
+    func cancel() {
+        lock.lock()
+        defer { lock.unlock() }
+        cancelled = true
+        if launched && process.isRunning { process.terminate() }
+    }
+
+    func timeOut() {
+        lock.lock()
+        defer { lock.unlock() }
+        if launched && process.isRunning {
+            timedOut = true
+            process.terminate()
+        }
+    }
+
+    var wasCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    var didTimeOut: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return timedOut
     }
 }

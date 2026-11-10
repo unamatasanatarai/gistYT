@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shlex
 import sys
 from collections.abc import Callable, Sequence
@@ -343,9 +344,30 @@ def render_transcript_file(result: TranscriptResult) -> str:
     return "\n".join(lines) + "\n\n" + result.text.strip() + "\n"
 
 
+_WATCH_ID_RE = re.compile(r"youtube\.com/watch\?v=([0-9A-Za-z_-]{11})(?![0-9A-Za-z_-])")
+
+
+def _owner_video_id(path: Path) -> str | None:
+    """Video ID in an existing transcript's URL header line, or None if unreadable."""
+    try:
+        with path.open(encoding="utf-8", errors="replace") as f:
+            head = f.read(4096)
+    except OSError:
+        return None
+    match = _WATCH_ID_RE.search(head)
+    return match.group(1) if match else None
+
+
 def save_transcript(result: TranscriptResult, out_dir: Path | str) -> tuple[Path, bool]:
-    """Write transcriptions/<slug>.txt, always overwriting. Returns (path, overwrote)."""
-    path = transcript_path(out_dir, make_slug(result.title, result.video_id))
+    """Write transcriptions/<slug>.txt, overwriting only this video's own file.
+
+    Slugs come from titles, so a different video can already own <slug>.txt; then
+    the file is <slug>-<video_id>.txt instead. Returns (path, overwrote).
+    """
+    slug = make_slug(result.title, result.video_id)
+    path = transcript_path(out_dir, slug)
+    if path.exists() and _owner_video_id(path) != result.video_id:
+        path = transcript_path(out_dir, f"{slug}-{result.video_id}")
     path.parent.mkdir(parents=True, exist_ok=True)
     existed = path.exists()
     path.write_text(render_transcript_file(result), encoding="utf-8")

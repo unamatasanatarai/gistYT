@@ -1,7 +1,9 @@
 import Foundation
 
 public enum VideoIDParser {
-    private static let idRegex = try! NSRegularExpression(pattern: "^[0-9A-Za-z_-]{11}$")
+    // \A and \z: unlike ^ and $, they never match around a trailing newline, which
+    // Foundation can produce by percent-decoding "%0A" in query values and paths.
+    private static let idRegex = try! NSRegularExpression(pattern: #"\A[0-9A-Za-z_-]{11}\z"#)
     private static let validHosts: Set<String> = [
         "youtube.com", "m.youtube.com", "music.youtube.com",
         "youtube-nocookie.com", "youtubekids.com", "m.youtubekids.com"
@@ -51,6 +53,13 @@ public enum VideoIDParser {
     }
 
     public static func watchURL(for videoID: String) -> URL {
-        URL(string: "https://www.youtube.com/watch?v=\(videoID)")!
+        // URLComponents percent-encodes the query value, so this cannot fail on odd input
+        // the way URL(string:) does on macOS 12; the literal fallback is only a backstop.
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "www.youtube.com"
+        components.path = "/watch"
+        components.queryItems = [URLQueryItem(name: "v", value: videoID)]
+        return components.url ?? URL(string: "https://www.youtube.com/watch")!
     }
 }

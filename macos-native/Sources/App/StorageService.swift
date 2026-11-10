@@ -23,6 +23,58 @@ public actor StorageService {
         return (transcriptions, summaries)
     }
 
+    /// Slugs come from titles, so two different videos can share one ("Episode 1").
+    /// Returns `slug` when it is free or already belongs to `videoID`; otherwise
+    /// `slug-<videoID>`, which is unique per video. A file whose owner can't be
+    /// read is treated as someone else's, so it is never overwritten.
+    ///
+    /// Each returned slug is also claimed for `videoID`, so concurrent jobs for two
+    /// same-titled videos can't both pick the same free slug before either has written
+    /// its files. The check and the claim are atomic because this is an actor method
+    /// with no suspension points.
+    public func uniqueSlug(_ slug: String, videoID: String, transcriptions: URL, summaries: URL) -> String {
+        let chosen = isSlugAvailable(slug, for: videoID, transcriptions: transcriptions, summaries: summaries)
+            ? slug
+            : "\(slug)-\(videoID)"
+        claimedSlugs[chosen.lowercased()] = videoID
+        return chosen
+    }
+
+    /// Slug (lowercased: the default macOS volume is case-insensitive) -> video that claimed it.
+    private var claimedSlugs: [String: String] = [:]
+
+    private func isSlugAvailable(_ slug: String, for videoID: String, transcriptions: URL, summaries: URL) -> Bool {
+        if let owner = claimedSlugs[slug.lowercased()], owner != videoID {
+            return false
+        }
+        let existing = [
+            summaries.appendingPathComponent("\(slug).md"),
+            transcriptions.appendingPathComponent("\(slug).txt")
+        ].filter { FileManager.default.fileExists(atPath: $0.path) }
+        return existing.allSatisfy { Self.videoID(inFileAt: $0) == videoID }
+    }
+
+    /// The video ID from the first watch URL in a saved file's header.
+    public static func videoID(inFileAt url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        let data = handle.readData(ofLength: 4096)
+        try? handle.close()
+        guard let header = String(data: data, encoding: .utf8) else { return nil }
+        if let marker = header.range(of: "youtube.com/watch?v=") {
+            let id = header[marker.upperBound...].prefix { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
+            if id.count == 11 { return String(id) }
+        }
+        for line in header.components(separatedBy: .newlines).prefix(15) {
+            for word in line.components(separatedBy: .whitespaces) {
+                if (word.contains("youtube.com") || word.contains("youtu.be")),
+                   let parsed = VideoIDParser.parseVideoID(from: word) {
+                    return parsed
+                }
+            }
+        }
+        return nil
+    }
+
     public func saveTranscript(
         result: TranscriptResult,
         slug: String,
@@ -128,6 +180,7 @@ public actor StorageService {
                 .appendingPathComponent("transcriptions")
                 .appendingPathComponent("\(slug).txt")
             let hasTranscript = FileManager.default.fileExists(atPath: transcriptURL.path)
+            let videoID = Self.videoID(inFileAt: url) ?? (hasTranscript ? Self.videoID(inFileAt: transcriptURL) : nil)
 
             items.append(SavedSummaryItem(
                 slug: slug,
@@ -135,7 +188,8 @@ public actor StorageService {
                 channel: channel,
                 date: modDate,
                 summaryPath: url,
-                transcriptPath: hasTranscript ? transcriptURL : nil
+                transcriptPath: hasTranscript ? transcriptURL : nil,
+                videoID: videoID
             ))
         }
 

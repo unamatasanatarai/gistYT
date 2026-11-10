@@ -85,8 +85,9 @@ public struct SavedSummaryItem: Identifiable, Sendable {
     public let summaryPath: URL?
     public let transcriptPath: URL?
     public var isLoading: Bool
+    public var videoID: String?
 
-    public init(slug: String, title: String, channel: String?, date: Date, summaryPath: URL?, transcriptPath: URL?, isLoading: Bool = false) {
+    public init(slug: String, title: String, channel: String?, date: Date, summaryPath: URL?, transcriptPath: URL?, isLoading: Bool = false, videoID: String? = nil) {
         self.slug = slug
         self.title = title
         self.channel = channel
@@ -94,5 +95,14 @@ public struct SavedSummaryItem: Identifiable, Sendable {
         self.summaryPath = summaryPath
         self.transcriptPath = transcriptPath
         self.isLoading = isLoading
+        self.videoID = videoID
     }
+}
+
+/// True when `error` means the surrounding task was cancelled. URLSession reports
+/// cancellation as URLError(.cancelled) rather than CancellationError.
+func isCancellationError(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+    return Task.isCancelled
 }

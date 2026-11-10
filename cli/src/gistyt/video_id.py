@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from urllib.parse import parse_qs, urlparse
 
-_ID_RE = re.compile(r"^[0-9A-Za-z_-]{11}$")
+_ID_RE = re.compile(r"[0-9A-Za-z_-]{11}")
 
 _YOUTUBE_HOSTS = {
     "youtube.com",
@@ -19,7 +19,9 @@ _PATH_PREFIXES = ("shorts", "embed", "live", "v", "e")
 
 
 def _is_id(value: str) -> bool:
-    return bool(_ID_RE.match(value))
+    # fullmatch, not match with ^...$: "$" also matches before a trailing newline,
+    # which parse_qs produces when it decodes "%0A".
+    return bool(_ID_RE.fullmatch(value))
 
 
 def parse_video_id(arg: str) -> str | None:

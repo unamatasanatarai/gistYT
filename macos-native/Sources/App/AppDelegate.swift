@@ -26,6 +26,31 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    private var lastQuitAttempt: Date? = nil
+    private var quitResetWorkItem: DispatchWorkItem? = nil
+
+    /// Implements double ⌘Q to quit: first press displays a gentle prompt,
+    /// a second press within 2 seconds cleanly exits the application.
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let now = Date()
+        if let last = lastQuitAttempt, now.timeIntervalSince(last) < 2.0 {
+            lastQuitAttempt = nil
+            quitResetWorkItem?.cancel()
+            return .terminateNow
+        }
+
+        lastQuitAttempt = now
+        quitResetWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.lastQuitAttempt = nil
+        }
+        quitResetWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: work)
+
+        NotificationCenter.default.post(name: .confirmQuitRequested, object: nil)
+        return .terminateCancel
+    }
+
     private func setupMainWindow() {
         let rootView = MainAppView()
         let hostingController = NSHostingController(rootView: rootView)
@@ -38,7 +63,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
 
-        win.minSize = NSSize(width: 800, height: 560)
+        win.minSize = NSSize(width: 400, height: 500)
         win.title = AppConfig.appName
         win.center()
         win.contentViewController = hostingController
@@ -90,4 +115,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.mainMenu = mainMenu
     }
+}
+
+extension Notification.Name {
+    public static let confirmQuitRequested = Notification.Name("gistYT.confirmQuitRequested")
 }

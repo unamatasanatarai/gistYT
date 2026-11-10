@@ -45,20 +45,33 @@ resources_dir="${contents_dir}/Resources"
 
 mkdir -p "$macos_dir" "$resources_dir"
 
-if [[ ! -f "Resources/yt-dlp" ]]; then
-    printf '%s\n' "Locating yt-dlp binary..."
+# Bundled yt-dlp: only the pinned standalone release, verified by SHA-256. A yt-dlp
+# from PATH is never copied: Homebrew's is a Python script tied to its own interpreter.
+ytdlp_path="Resources/yt-dlp"
+sha256_of() { shasum -a 256 "$1" | awk '{print $1}'; }
+
+if [[ ! -f "$ytdlp_path" ]]; then
+    printf '%s\n' "Downloading yt-dlp ${YTDLP_VERSION} from GitHub..."
     mkdir -p Resources
-    for sys_path in "/opt/homebrew/bin/yt-dlp" "/usr/local/bin/yt-dlp" "$(command -v yt-dlp 2>/dev/null || true)"; do
-        if [[ -n "$sys_path" && -x "$sys_path" ]]; then
-            cp -f "$sys_path" "Resources/yt-dlp"
-            break
-        fi
-    done
-    if [[ ! -f "Resources/yt-dlp" ]]; then
-        printf '%s\n' "Downloading standalone yt-dlp binary from GitHub..."
-        curl -sL --fail --connect-timeout 15 "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o "Resources/yt-dlp"
-        chmod +x "Resources/yt-dlp"
+    tmp_ytdlp="$(mktemp "${TMPDIR:-/tmp}/yt-dlp.XXXXXX")"
+    trap 'rm -f "$tmp_ytdlp"' EXIT
+    curl -sSL --fail --proto '=https' --connect-timeout 15 --max-time 600 \
+        "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_macos" \
+        -o "$tmp_ytdlp"
+    downloaded_sha="$(sha256_of "$tmp_ytdlp")"
+    if [[ "$downloaded_sha" != "$YTDLP_SHA256" ]]; then
+        printf '%s\n' "Error: downloaded yt-dlp ${YTDLP_VERSION} has SHA-256 ${downloaded_sha}, expected ${YTDLP_SHA256}" >&2
+        exit 1
     fi
+    chmod +x "$tmp_ytdlp"
+    mv -f "$tmp_ytdlp" "$ytdlp_path"
+fi
+
+bundled_sha="$(sha256_of "$ytdlp_path")"
+if [[ "$bundled_sha" != "$YTDLP_SHA256" ]]; then
+    printf '%s\n' "Error: ${ytdlp_path} (SHA-256 ${bundled_sha}) is not the pinned yt-dlp ${YTDLP_VERSION}." >&2
+    printf '%s\n' "       Delete it to re-download, or update YTDLP_VERSION and YTDLP_SHA256 in scripts/config.sh." >&2
+    exit 1
 fi
 
 if [[ -d "Resources" ]]; then
@@ -119,17 +132,46 @@ cat <<EOF >"${contents_dir}/Info.plist"
 EOF
 
 # macOS remembers granted permissions (TCC) against the app's designated requirement.
-# Ad-hoc signing defaults to a per-build cdhash requirement, which loses permissions on
-# every rebuild, so pin the requirement to the bundle ID instead. No keychain is used.
-designated_requirement="designated => identifier \"${bundle_id}\""
+# Never pin it to the bundle ID alone: with ad-hoc signing anyone can sign any binary
+# with that identifier and inherit the permissions (e.g. Full Disk Access for Safari
+# cookies). Pin it to a certificate only you hold, or keep ad-hoc's per-build cdhash.
+signed_requirement() { codesign -d -r- "$app_dir" 2>&1 | grep -E '^(# )?designated => ' || true; }
 
-printf '%s\n' "Signing ${app_name} bundle (ad-hoc, ${designated_requirement})..."
-codesign --force --deep --sign - --requirements "=${designated_requirement}" "$app_dir"
+if [[ -n "$SIGN_IDENTITY" ]]; then
+    # Resolve the configured name or SHA-1 to exactly one identity's SHA-1. Untrusted
+    # self-signed identities are fine: codesign and TCC only compare the leaf hash.
+    identity_hashes="$(security find-identity -p codesigning | awk -v id="$SIGN_IDENTITY" '
+        /^ *[0-9]+\) [0-9A-F]{40} "/ {
+            name = $0; sub(/^[^"]*"/, "", name); sub(/"[^"]*$/, "", name)
+            if ($2 == toupper(id) || name == id) print $2
+        }' | sort -u)"
+    identity_count="$(printf '%s' "$identity_hashes" | grep -c . || true)"
+    if [[ "$identity_count" -ne 1 ]]; then
+        printf '%s\n' "Error: SIGN_IDENTITY '${SIGN_IDENTITY}' matches ${identity_count} code-signing identities; use its SHA-1 from 'security find-identity -p codesigning'." >&2
+        exit 1
+    fi
+    identity_hash="$identity_hashes"
+    pinned_requirement="identifier \"${bundle_id}\" and certificate leaf = H\"${identity_hash}\""
+    designated_requirement="designated => ${pinned_requirement}"
 
-signed_requirement="$(codesign -d -r- "$app_dir" 2>&1 | grep '^designated => ' || true)"
-if [[ "$signed_requirement" != "$designated_requirement" ]]; then
-    printf '%s\n' "Error: Unexpected designated requirement '${signed_requirement}'; permissions would not persist." >&2
-    exit 1
+    printf '%s\n' "Signing ${app_name} bundle with ${identity_hash} (${SIGN_IDENTITY})..."
+    codesign --force --deep --sign "$identity_hash" --requirements "=${designated_requirement}" "$app_dir"
+
+    # The requirement must hold for this build and must pin the certificate.
+    if ! codesign --verify --strict -R="${pinned_requirement}" "$app_dir" ||
+        ! signed_requirement | grep -qi "certificate leaf = H\"${identity_hash}\""; then
+        printf '%s\n' "Error: Unexpected designated requirement '$(signed_requirement)'." >&2
+        exit 1
+    fi
+else
+    printf '%s\n' "Signing ${app_name} bundle (ad-hoc)..."
+    printf '%s\n' "Note: SIGN_IDENTITY is not set, so macOS will ask for privacy permissions again after each rebuild."
+    codesign --force --deep --sign - "$app_dir"
+
+    if ! signed_requirement | grep -q 'cdhash H"'; then
+        printf '%s\n' "Error: Unexpected designated requirement '$(signed_requirement)' for an ad-hoc build." >&2
+        exit 1
+    fi
 fi
 
 printf '%s\n' "Refreshing macOS LaunchServices cache..."

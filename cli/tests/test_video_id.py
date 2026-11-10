@@ -48,6 +48,8 @@ def test_id_with_leading_dash():
         "https://www.youtube.com/playlist?list=PL123",
         "ftp://youtube.com/watch?v=dQw4w9WgXcQ",
         "https://youtu.be/",
+        f"https://www.youtube.com/watch?v={ID}%0A",  # percent-encoded trailing newline
+        f"https://www.youtube.com/watch?v={ID}%0a&t=1",
     ],
 )
 def test_rejects_non_videos(arg):

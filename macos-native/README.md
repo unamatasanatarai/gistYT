@@ -114,6 +114,23 @@ make run
 make dmg
 ```
 
+#### Code signing
+
+By default the app is signed ad-hoc. That is safe, but macOS forgets granted privacy permissions (such as Full Disk Access, which the Safari cookie option needs) after every rebuild. To keep them, sign with your own certificate; a self-signed one is enough:
+
+1. In **Keychain Access**, choose **Keychain Access → Certificate Assistant → Create a Certificate…**, set **Certificate Type** to **Code Signing**, and create it in your login keychain.
+2. Build with it, using its name or the SHA-1 shown by `security find-identity -p codesigning`:
+
+   ```bash
+   SIGN_IDENTITY="My Code Signing" make build
+   ```
+
+   Or set `SIGN_IDENTITY` in `scripts/config.sh`. The app's designated requirement then pins that certificate, so permissions persist across builds and no other binary can claim them.
+
+#### Bundled yt-dlp
+
+`Resources/yt-dlp` must be the release pinned in `scripts/config.sh` (`YTDLP_VERSION`, `YTDLP_SHA256`); the build verifies its SHA-256 and downloads the pinned release if the file is missing. To upgrade, set both values from the new release's `SHA2-256SUMS` entry for `yt-dlp_macos` and delete the old binary.
+
 ---
 
 ## Configuration
@@ -133,6 +150,7 @@ Access the Settings Sheet via the gear icon or `⌘,`:
 
 * **`⌘V`**: Paste YouTube link into the input bar.
 * **`Return`**: Fetch transcript and generate brief.
+* **`Esc`**: Cancel the running fetch or summary.
 * **`⌘R`**: Refresh saved library briefs.
 * **`⌘,`**: Open Application Settings.
 * **`⌘W`**: Close application window.
