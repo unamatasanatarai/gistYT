@@ -284,6 +284,26 @@ public enum AppTests {
             assert(secondAttempt == .terminateNow, "Second quit attempt within 2s should terminate")
         }
 
+        testRunner("AppDelegate keeps window alive across close and reopens on Dock click") {
+            let delegate = AppDelegate()
+            let initialReopen = delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+            assert(initialReopen, "applicationShouldHandleReopen should return true")
+            guard let win = delegate.window else {
+                preconditionFailure("Expected AppDelegate to hold main window")
+            }
+            assert(!win.isReleasedWhenClosed, "NSWindow.isReleasedWhenClosed must be false so closing does not over-release the window")
+            assert(win.isVisible, "Window should be visible after reopen")
+
+            win.close()
+            assert(!win.isVisible, "Window should be hidden after close")
+
+            let reopenAfterClose = delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+            assert(reopenAfterClose, "applicationShouldHandleReopen should return true after close")
+            assert(delegate.window === win, "AppDelegate should reuse the same window instance")
+            assert(win.isVisible, "Window should become visible again after Dock reopen")
+            win.orderOut(nil)
+        }
+
         // F4: the actionable yt-dlp error must survive a failing HTTP fallback.
         testRunner("YouTubeService surfaces yt-dlp bot-check error when the fallback also fails") {
             let stub = try makeStubYtDlp("""

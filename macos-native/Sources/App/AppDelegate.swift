@@ -2,7 +2,7 @@ import Cocoa
 import SwiftUI
 
 public final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var window: NSWindow?
+    public private(set) var window: NSWindow?
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         // Configure as regular Dock application
@@ -17,7 +17,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
+            if window == nil {
+                setupMainWindow()
+            }
+            if window?.isMiniaturized == true {
+                window?.deminiaturize(nil)
+            }
             window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         }
         return true
     }
@@ -63,6 +70,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
 
+        // AppKit defaults NSWindow.isReleasedWhenClosed to true, which over-releases
+        // the window on close under ARC and crashes on Dock reopen.
+        win.isReleasedWhenClosed = false
         win.minSize = NSSize(width: 400, height: 500)
         win.title = AppConfig.appName
         win.center()
