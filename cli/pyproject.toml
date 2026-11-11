@@ -1,6 +1,6 @@
 [project]
 name = "gistyt"
-version = "1.0.0"
+version = "1.0.1"
 description = "gistYT — Fetch YouTube transcripts and summarize them with Gemini"
 readme = "README.md"
 requires-python = ">=3.14"
